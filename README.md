@@ -85,7 +85,7 @@ This tool is often used as a **base layer** for Tool #2, allowing artists to pla
 
 # 🕹 Sprite Over Background Video (Local)
 
-Overlay a **Sprite (PNG)** on top of a looping **Background video (WEBM)**.  
+Overlay a **Sprite (PNG or animated GIF)** on top of a looping **Background video (WEBM)**.  
 Move, rotate, and scale the Sprite in real-time, then **record** the composition to WEBM.
 
 This tool is fully compatible with **exports from the Parallax Scrolling Renderer**.  
@@ -102,7 +102,7 @@ This creates an easy workflow for building **multi-sprite composite animations**
 
 ## ✨ Features
 
-- Sprite (PNG with alpha) over looping WEBM Background  
+- Sprite (**PNG with alpha** or **animated GIF**) over looping WEBM Background    
 - Perfect for animating sprites **on top of parallax exports from Tool #1**  
 - Use multiple passes to **stack several sprites**  
 - Mouse + keyboard controls for precise animation  
@@ -139,7 +139,8 @@ This creates an easy workflow for building **multi-sprite composite animations**
 
 - Uses `canvas.captureStream()` + `MediaRecorder`  
 - VP9/VP8 WebM depending on browser  
-- Adds Background audio when allowed  
+- Adds Background audio when allowed
+- Animated **GIF sprites are recorded as animation** when the browser supports **WebCodecs `ImageDecoder`**. If WebCodecs is unavailable, GIF may export as a **static first frame** 
 - Output naming: `export-YYYY-MM-DDTHH-MM-SS.webm`
 
 ---
