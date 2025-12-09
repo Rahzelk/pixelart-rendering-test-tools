@@ -1,0 +1,566 @@
+<!-- /src/Scroll-Differential-v4.1-2Layers-window-320x224-overlay-cancel-export-after-scrub.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Differential Scrolling — 2 Layers (FG/BG) + Window Output</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --gap: 10px; --pad: 12px; --br: 10px; --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); background: #0b0d12; color: #e7e9ee; }
+    header { padding: var(--pad); border-bottom: 1px solid #1b1f2a; background: #0f1219; position: sticky; top:0; z-index: 3; }
+    h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
+    main { display: grid; grid-template-columns: 410px 1fr; gap: var(--gap); padding: var(--pad); }
+    .panel { background: #0f1219; border: 1px solid #1b1f2a; border-radius: var(--br); padding: var(--pad); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .row > label { min-width: 130px; font-size: 12px; color: #b8c0cf; }
+    input[type="number"] { width: 110px; }
+    input, button, select { background: #0b0d12; color: #e7e9ee; border: 1px solid #2a3244; border-radius: 8px; padding: 6px 8px; }
+    input[type="color"] { padding: 0; width: 40px; height: 32px; border-radius: 6px; }
+    button { cursor: pointer; }
+    button.primary { background: #1a57ff; border-color: #1a57ff; }
+    button.ghost { background: transparent; border-color: #2a3244; }
+    button[disabled] { opacity: .6; cursor: not-allowed; }
+    fieldset { border: 1px dashed #2a3244; border-radius: 10px; padding: 10px; }
+    legend { color: #9fb2ff; font-size: 12px; padding: 0 6px; }
+    .zones { display: grid; gap: 8px; }
+    .zoneHeader { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; align-items: end; font-size: 11px; color: #b8c0cf; padding: 0 2px; }
+    .zoneHeader > span:last-child { visibility: hidden; }
+    .zone { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; align-items: center; }
+    .grid { display: grid; gap: 10px; }
+    .side { display: grid; gap: var(--gap); align-content: start; }
+    canvas { display: block; max-width: 100%; background: #0b0d12; border: 1px solid #1b1f2a; border-radius: var(--br); }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #recCanvas { position: fixed; inset: -9999px; width: 1px; height: 1px; }
+    .dl { display:inline-block; text-decoration:underline; }
+
+    /* Export overlay */
+    .export-backdrop[aria-hidden="false"] { display: flex; }
+    .export-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(5,8,15,.72); backdrop-filter: blur(2px);
+      z-index: 9999; align-items: center; justify-content: center; pointer-events: all;
+    }
+    .export-modal {
+      width: min(92vw, 520px); background: #0f1219; border: 1px solid #2a3244;
+      border-radius: 14px; padding: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+    }
+    .export-modal h2 { margin: 0 0 8px; font-size: 18px; }
+    .export-modal p { margin: 0 12px 12px; color: #b8c0cf; font-size: 14px; }
+    .spin { margin: 10px auto 14px; width: 40px; height: 40px; border-radius: 50%;
+      border: 4px solid #2a3244; border-top-color: #1a57ff; animation: rot 1s linear infinite; }
+    .export-actions { display:flex; gap:10px; justify-content:center; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header><h1>Differential Scrolling — 2 Layers (FG/BG) + Window Output</h1></header>
+
+  <!-- Blocking export overlay -->
+  <div id="exportOverlay" class="export-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="exportTitle" aria-describedby="exportDesc">
+    <div class="export-modal">
+      <h2 id="exportTitle">Export in progress</h2>
+      <div class="spin" aria-hidden="true"></div>
+      <p id="exportDesc">Please wait. Do not close this tab or window until the export has finished.</p>
+      <p class="mono" id="exportProgress">Preparing…</p>
+      <div class="export-actions">
+        <button id="cancelExport" class="ghost" type="button">Cancel export</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="side">
+      <div class="panel grid">
+        <fieldset>
+          <legend>Background</legend>
+          <div class="grid">
+            <div class="row">
+              <label>Background Image</label>
+              <input id="bgFile" type="file" accept="image/*">
+              <label>Background Color</label>
+              <input id="bgColor" type="color" value="#000000" title="Shown through transparent parts of the BG">
+            </div>
+            <div class="row">
+              <label>Vertical Speed (px/frame)</label>
+              <input id="bgVSpeed" type="number" step="0.1" value="0">
+            </div>
+            <div>
+              <div class="row" style="justify-content: space-between;">
+                <span class="mono" style="font-size:12px;color:#94a0b8">Horizontal zones (8px bands)</span>
+                <button id="bgAddZone" class="ghost" type="button">+ zone</button>
+              </div>
+              <div id="bgZones" class="zones"></div>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Foreground</legend>
+          <div class="grid">
+            <div class="row">
+              <label>Foreground Image</label>
+              <input id="fgFile" type="file" accept="image/*">
+            </div>
+            <div class="row">
+              <label>Vertical Speed (px/frame)</label>
+              <input id="fgVSpeed" type="number" step="0.1" value="0">
+            </div>
+            <div>
+              <div class="row" style="justify-content: space-between;">
+                <span class="mono" style="font-size:12px;color:#94a0b8">Horizontal zones (8px bands)</span>
+                <button id="fgAddZone" class="ghost" type="button">+ zone</button>
+              </div>
+              <div id="fgZones" class="zones"></div>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="panel grid">
+        <fieldset>
+          <legend>Window & Output</legend>
+          <div class="row">
+            <label>Output resolution W×H</label>
+            <input id="outW" type="number" min="1" value="320" step="1">
+            <input id="outH" type="number" min="1" value="224" step="1">
+          </div>
+          <div class="row">
+            <label>Window origin X,Y</label>
+            <input id="winX" type="number" min="0" value="0" step="1" title="X offset in composition">
+            <input id="winY" type="number" min="0" value="0" step="1" title="Y offset in composition">
+          </div>
+          <div class="row">
+            <label>Fit to width</label><input id="fit" type="checkbox" checked>
+            <span id="dims" class="mono" style="color:#94a0b8"></span>
+          </div>
+          <div class="row">
+            <label>FPS</label><input id="fps" type="number" min="1" max="120" value="30">
+          </div>
+          <div class="row">
+            <label>Number of Frames</label><input id="frames" type="number" min="1" max="100000" value="300">
+          </div>
+        </fieldset>
+
+        <div class="controls">
+          <button id="playPause" class="primary" type="button">▶ Play</button>
+          <input id="scrub" type="range" min="0" max="300" value="0" style="flex:1">
+          <button id="export" type="button">Export WebM</button>
+          <a id="dl" class="dl" href="#" style="display:none">Download video</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <canvas id="view" width="320" height="224"></canvas>
+      <canvas id="recCanvas" width="320" height="224" aria-hidden="true"></canvas>
+    </section>
+  </main>
+
+  <template id="zoneRow">
+    <div class="zone">
+      <input type="number" class="zStart" step="1" min="0" value="0" title="Start tile (8px)">
+      <input type="number" class="zEnd" step="1" min="1" value="10" title="End tile (8px)">
+      <input type="number" class="zSpeed" step="0.1" value="0" title="Horizontal speed (px/frame)">
+      <button class="del ghost" type="button" title="Remove">−</button>
+    </div>
+  </template>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const tile = 8;
+    const hasOffscreen = typeof OffscreenCanvas !== 'undefined';
+    const hasFSAccess = 'showSaveFilePicker' in window;
+
+    function makeCanvas(w, h, preferOffscreen = true) {
+      if (preferOffscreen && hasOffscreen) return new OffscreenCanvas(w, h);
+      const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+    }
+    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+    function modWrap(v, m) { const r = v % m; return r < 0 ? r + m : r; }
+    function pickSupportedMime() {
+      const candidates = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+      for (const m of candidates) { if (window.MediaRecorder && MediaRecorder.isTypeSupported?.(m)) return m; }
+      return null;
+    }
+    function formatDuration(ms) {
+      const s = Math.max(0, Math.round(ms / 1000));
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      return `${mm}:${ss}`;
+    }
+
+    const state = {
+      fps: 30, totalFrames: 300, frame: 0, playing: false, exporting: false, cancelRequested: false, fit: true,
+      compW: 1280, compH: 720,
+      outW: 320, outH: 224, winX: 0, winY: 0,
+      layers: {
+        bg: { bitmap: null, w: 0, h: 0, vSpeed: 0, zones: [], color: '#000000' },
+        fg: { bitmap: null, w: 0, h: 0, vSpeed: 0, zones: [] },
+      },
+      currentRecorder: null,
+      currentWritable: null,
+    };
+
+    const els = {
+      bgFile: $('#bgFile'), fgFile: $('#fgFile'), bgColor: $('#bgColor'),
+      bgVSpeed: $('#bgVSpeed'), fgVSpeed: $('#fgVSpeed'),
+      bgAddZone: $('#bgAddZone'), fgAddZone: $('#fgAddZone'),
+      bgZones: $('#bgZones'), fgZones: $('#fgZones'),
+      fps: $('#fps'), frames: $('#frames'), fit: $('#fit'), dims: $('#dims'),
+      view: $('#view'), recCanvas: $('#recCanvas'),
+      playPause: $('#playPause'), scrub: $('#scrub'), exportBtn: $('#export'),
+      zoneTpl: $('#zoneRow'), outW: $('#outW'), outH: $('#outH'), winX: $('#winX'), winY: $('#winY'),
+      dl: $('#dl'),
+      overlay: $('#exportOverlay'), overlayMsg: $('#exportProgress'), cancelExport: $('#cancelExport'),
+    };
+
+    const vctx = els.view.getContext('2d');
+    const off = makeCanvas(1,1,true);
+    const offCtx = off.getContext('2d');
+
+    function ensureZoneHeader(container) {
+      if (!container.querySelector('.zoneHeader')) {
+        const head = document.createElement('div');
+        head.className = 'zoneHeader';
+        head.innerHTML = `<span>Start tile</span><span>End tile</span><span>Speed (px/frame)</span><span></span>`;
+        container.prepend(head);
+      }
+    }
+    function refreshZoneHeaderVisibility(container) {
+      const header = container.querySelector('.zoneHeader');
+      const hasZones = container.querySelectorAll('.zone').length > 0;
+      if (header && !hasZones) header.remove();
+    }
+    function addZone(container, defaults = { start: 0, end: 10, speed: 0 }) {
+      if (!container.querySelector('.zone')) ensureZoneHeader(container);
+      const node = els.zoneTpl.content.firstElementChild.cloneNode(true);
+      node.querySelector('.zStart').value = defaults.start;
+      node.querySelector('.zEnd').value = defaults.end;
+      node.querySelector('.zSpeed').value = defaults.speed;
+      node.querySelector('.del').addEventListener('click', () => { node.remove(); refreshZoneHeaderVisibility(container); renderFrame(state.frame); });
+      node.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => renderFrame(state.frame)));
+      container.appendChild(node);
+      return node;
+    }
+    function readZones(container) {
+      const zones = [];
+      container.querySelectorAll('.zone').forEach(z => {
+        const startT = parseInt(z.querySelector('.zStart').value || '0', 10);
+        const endT = parseInt(z.querySelector('.zEnd').value || '0', 10);
+        const speed = parseFloat(z.querySelector('.zSpeed').value || '0');
+        const y0 = Math.min(startT, endT) * tile;
+        const y1 = Math.max(startT, endT) * tile;
+        zones.push({ y0, y1, speed });
+      });
+      zones.sort((a,b)=>a.y0-b.y0);
+      return zones;
+    }
+
+    function updateCompSize() {
+      const w = Math.max(state.layers.bg.w || 0, state.layers.fg.w || 0) || 1280;
+      const h = Math.max(state.layers.bg.h || 0, state.layers.fg.h || 0) || 720;
+      state.compW = Math.max(1, w);
+      state.compH = Math.max(1, h);
+      off.width = state.compW; off.height = state.compH;
+
+      state.outW = clamp(state.outW, 1, state.compW);
+      state.outH = clamp(state.outH, 1, state.compH);
+      const maxX = Math.max(0, state.compW - state.outW);
+      const maxY = Math.max(0, state.compH - state.outH);
+      state.winX = clamp(state.winX, 0, maxX);
+      state.winY = clamp(state.winY, 0, maxY);
+
+      els.recCanvas.width = state.outW;
+      els.recCanvas.height = state.outH;
+
+      if (state.fit) {
+        const panel = document.querySelector('section.panel:last-of-type');
+        const ratio = state.outW ? (panel.clientWidth - 2) / state.outW : 1;
+        els.view.width  = Math.max(1, Math.round(state.outW * ratio));
+        els.view.height = Math.max(1, Math.round(state.outH * ratio));
+      } else {
+        els.view.width  = state.outW;
+        els.view.height = state.outH;
+      }
+
+      els.dims.textContent = `Comp: ${state.compW}×${state.compH} | Window: ${state.outW}×${state.outH} @ (${state.winX},${state.winY})`;
+    }
+
+    function fileToBitmap(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = async () => {
+          try { const bmp = await createImageBitmap(img); URL.revokeObjectURL(url); resolve(bmp); }
+          catch (e) { reject(e); }
+        };
+        img.onerror = reject; img.src = url;
+      });
+    }
+
+    function drawBandFromLayer(ctx, layer, y, hBand, frame, bandSpeedX) {
+      const bmp = layer.bitmap; if (!bmp) return;
+      const W = state.compW;
+      const iw = bmp.width, ih = bmp.height; if (!iw || !ih) return;
+
+      const ox = modWrap(Math.floor(frame * bandSpeedX), iw);
+      const oy = modWrap(Math.floor(frame * layer.vSpeed), ih);
+
+      const band = makeCanvas(W, hBand, true);
+      const bctx = band.getContext('2d');
+      bctx.save();
+      bctx.translate(-ox, -oy - (y % ih));
+      const repsX = Math.ceil((W + iw) / iw) + 1;
+      const repsY = Math.ceil((hBand + ih) / ih) + 1;
+      for (let yy = 0; yy < repsY; yy++)
+        for (let xx = 0; xx < repsX; xx++)
+          bctx.drawImage(bmp, xx * iw, yy * ih);
+      bctx.restore();
+      ctx.drawImage(band, 0, 0, W, hBand, 0, y, W, hBand);
+    }
+
+    function drawLayer(ctx, layer, frame) {
+      const H = state.compH;
+      const zones = layer.zones;
+      for (let y = 0; y < H; y += tile) {
+        let speedX = 0;
+        for (const z of zones) { if (y < z.y1 && (y + tile) > z.y0) { speedX = z.speed; break; } }
+        drawBandFromLayer(ctx, layer, y, Math.min(tile, H - y), frame, speedX);
+      }
+    }
+
+    function renderFrame(frame) {
+      const viewW = els.view.width, viewH = els.view.height;
+      state.layers.bg.zones = readZones(els.bgZones);
+      state.layers.fg.zones = readZones(els.fgZones);
+      updateCompSize();
+
+      offCtx.save();
+      offCtx.clearRect(0, 0, state.compW, state.compH);
+      offCtx.fillStyle = state.layers.bg.color;
+      offCtx.fillRect(0, 0, state.compW, state.compH);
+      drawLayer(offCtx, state.layers.bg, frame);
+      drawLayer(offCtx, state.layers.fg, frame);
+      offCtx.restore();
+
+      vctx.save();
+      vctx.clearRect(0, 0, viewW, viewH);
+      vctx.imageSmoothingEnabled = false;
+      vctx.drawImage(off, state.winX, state.winY, state.outW, state.outH, 0, 0, viewW, viewH);
+      vctx.restore();
+
+      els.scrub.max = String(state.totalFrames - 1);
+      els.scrub.value = String(frame);
+    }
+
+    function tick() {
+      if (!state.playing) return;
+      state.frame = (state.frame + 1) % state.totalFrames;
+      renderFrame(state.frame);
+      requestAnimationFrame(tick);
+    }
+
+    function beforeUnloadHandler(e) { e.preventDefault(); e.returnValue = ''; }
+    function showExportOverlay() {
+      els.overlay.setAttribute('aria-hidden', 'false');
+      els.overlay.removeAttribute('hidden');
+      document.body.style.cursor = 'progress';
+      window.addEventListener('beforeunload', beforeUnloadHandler);
+      els.overlay.querySelector('.export-modal').focus?.();
+    }
+    function hideExportOverlay() {
+      els.overlay.setAttribute('aria-hidden', 'true');
+      els.overlay.setAttribute('hidden', '');
+      document.body.style.cursor = '';
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
+    }
+
+    els.cancelExport.addEventListener('click', () => {
+      if (!state.exporting) return;
+      if (!confirm('Are you sure you want to cancel the export?')) return;
+      state.cancelRequested = true;
+      els.cancelExport.disabled = true;
+      els.overlayMsg.textContent = 'Canceling…';
+      try { state.currentRecorder?.stop(); } catch {}
+    });
+
+    async function exportWebM_withPickerFirst() {
+      if (state.exporting) return;
+      const mime = pickSupportedMime();
+      if (!mime) { alert('No WebM format supported by MediaRecorder.'); return; }
+
+      let writable = null, dlURL = null, chunks = [];
+      state.cancelRequested = false;
+      els.cancelExport.disabled = false;
+
+      try {
+        state.playing = false;
+        updatePlayPauseUI();
+        state.exporting = true;
+        setPlaybackEnabled(false);
+        showExportOverlay();
+
+        if (hasFSAccess) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: 'scroll-diff-2layers-window.webm',
+            types: [{ description: 'WebM Video', accept: { 'video/webm': ['.webm'] } }],
+          });
+          writable = await handle.createWritable();
+          state.currentWritable = writable;
+        } else {
+          state.currentWritable = null;
+        }
+
+        const recCtx = els.recCanvas.getContext('2d', { desynchronized: true });
+        els.recCanvas.width = state.outW; els.recCanvas.height = state.outH;
+        const stream = els.recCanvas.captureStream(state.fps);
+        const rec = new MediaRecorder(stream, { mimeType: mime });
+        state.currentRecorder = rec;
+
+        if (writable) rec.ondataavailable = async (e) => { if (e.data && e.data.size) await writable.write(e.data); };
+        else          rec.ondataavailable =       (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+
+        const done = new Promise((res) => rec.onstop = res);
+        rec.start();
+
+        const t0 = performance.now();
+
+        for (let f = 0; f < state.totalFrames; f++) {
+          if (state.cancelRequested) break;
+
+          offCtx.clearRect(0, 0, state.compW, state.compH);
+          offCtx.fillStyle = state.layers.bg.color;
+          offCtx.fillRect(0, 0, state.compW, state.compH);
+          drawLayer(offCtx, state.layers.bg, f);
+          drawLayer(offCtx, state.layers.fg, f);
+
+          recCtx.clearRect(0, 0, state.outW, state.outH);
+          recCtx.drawImage(off, state.winX, state.winY, state.outW, state.outH, 0, 0, state.outW, state.outH);
+
+          const doneFrames = f + 1;
+          const pct = Math.round((100 * doneFrames) / state.totalFrames);
+          const leftFrames = state.totalFrames - doneFrames;
+          const elapsedMs = performance.now() - t0;
+          const fpsEff = Math.max(0.1, doneFrames / (elapsedMs / 1000));
+          const etaMs = (leftFrames / fpsEff) * 1000;
+
+          els.overlayMsg.textContent = `Encoding… ${pct}% · ${leftFrames} frames left · ~${formatDuration(etaMs)}`;
+
+          await new Promise(r => setTimeout(r, 1000 / state.fps));
+        }
+
+        if (rec.state !== 'inactive') rec.stop();
+        await done;
+
+        if (state.cancelRequested) {
+          try { await writable?.close(); } catch {}
+          els.overlayMsg.textContent = 'Export canceled.';
+          await new Promise(r => setTimeout(r, 600));
+          return;
+        }
+
+        if (writable) {
+          await writable.close();
+        } else {
+          const blob = new Blob(chunks, { type: mime });
+          if (!blob.size) throw new Error('No data recorded.');
+          dlURL = URL.createObjectURL(blob);
+          els.dl.href = dlURL;
+          els.dl.download = 'scroll-diff-2layers-window.webm';
+          els.dl.style.display = '';
+          try { els.dl.click(); } catch {}
+          setTimeout(() => { if (dlURL) URL.revokeObjectURL(dlURL); }, 60000);
+        }
+      } catch (err) {
+        if (!(err && (err.name === 'AbortError' || err.name === 'SecurityError'))) {
+          console.error(err);
+          alert(`Export WebM: ${err?.message || err}`);
+        }
+      } finally {
+        state.currentRecorder = null;
+        state.currentWritable = null;
+        state.exporting = false;
+        setPlaybackEnabled(true);
+        els.overlayMsg.textContent = 'Preparing…';
+        hideExportOverlay();
+      }
+    }
+
+    function setPlaybackEnabled(enabled) {
+      els.playPause.disabled = !enabled;
+      els.scrub.disabled = !enabled;
+      els.exportBtn.disabled = !enabled ? true : false;
+    }
+
+    function updateFromUIAndRender() {
+      if (state.exporting) return;
+      state.fps = parseInt(els.fps.value || '30', 10);
+      state.totalFrames = parseInt(els.frames.value || '300', 10);
+      state.fit = !!els.fit.checked;
+      state.layers.bg.vSpeed = parseFloat(els.bgVSpeed.value || '0');
+      state.layers.fg.vSpeed = parseFloat(els.fgVSpeed.value || '0');
+      state.layers.bg.color = els.bgColor.value || '#000000';
+      state.outW = parseInt(els.outW.value || '320', 10);
+      state.outH = parseInt(els.outH.value || '224', 10);
+      state.winX = parseInt(els.winX.value || '0', 10);
+      state.winY = parseInt(els.winY.value || '0', 10);
+      renderFrame(state.frame);
+    }
+
+    function updatePlayPauseUI() {
+      els.playPause.textContent = state.playing ? '⏸ Pause' : '▶ Play';
+      if (state.playing) els.playPause.classList.remove('primary'); else els.playPause.classList.add('primary');
+    }
+
+    els.playPause.addEventListener('click', () => {
+      if (state.exporting) return;
+      state.playing = !state.playing;
+      updatePlayPauseUI();
+      if (state.playing) requestAnimationFrame(tick);
+    });
+
+    els.scrub.addEventListener('input', () => {
+      if (state.exporting) return;
+      state.frame = parseInt(els.scrub.value || '0', 10) || 0;
+      renderFrame(state.frame);
+    });
+
+    els.exportBtn.addEventListener('click', exportWebM_withPickerFirst);
+
+    function setupZoneButtons() {
+      els.bgAddZone.addEventListener('click', () => { if (state.exporting) return; addZone(els.bgZones); renderFrame(state.frame); });
+      els.fgAddZone.addEventListener('click', () => { if (state.exporting) return; addZone(els.fgZones); renderFrame(state.frame); });
+    }
+    async function handleFile(input, layerKey) {
+      const file = input.files?.[0];
+      if (!file) return;
+      const bmp = await fileToBitmap(file);
+      state.layers[layerKey].bitmap = bmp;
+      state.layers[layerKey].w = bmp.width;
+      state.layers[layerKey].h = bmp.height;
+      renderFrame(state.frame);
+    }
+    $('#bgFile').addEventListener('change', () => handleFile(els.bgFile, 'bg'));
+    $('#fgFile').addEventListener('change', () => handleFile(els.fgFile, 'fg'));
+
+    els.fit.addEventListener('change', updateFromUIAndRender);
+    els.fps.addEventListener('input', updateFromUIAndRender);
+    els.frames.addEventListener('input', updateFromUIAndRender);
+    els.bgColor.addEventListener('input', updateFromUIAndRender);
+    els.bgVSpeed.addEventListener('input', updateFromUIAndRender);
+    els.fgVSpeed.addEventListener('input', updateFromUIAndRender);
+    ['outW','outH','winX','winY'].forEach(id => els[id].addEventListener('input', updateFromUIAndRender));
+
+    setupZoneButtons();
+    addZone(els.bgZones, { start: 0, end: 10, speed: 0 });
+    addZone(els.fgZones, { start: 0, end: 10, speed: 0 });
+    updateCompSize();
+    renderFrame(0);
+    updatePlayPauseUI();
+    new ResizeObserver(() => state.fit && !state.exporting && renderFrame(state.frame)).observe(document.querySelector('section.panel:last-of-type'));
+  </script>
+</body>
+</html>
