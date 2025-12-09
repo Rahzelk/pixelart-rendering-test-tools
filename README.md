@@ -29,8 +29,9 @@ Create **parallax differential scrolling** videos from two images: **Foreground*
 Horizontal scrolling is controlled per **8px zone**, vertical scrolling applies to the whole layer.  
 Exports directly to **WebM**, fully offline.
 
-This tool is often used as a **base layer** for Tool #2, allowing artists to place animated sprites on top of the parallax video.
+This tool can be used as a **base layer** for Tool #2, allowing artists to place animated sprites on top of the parallax video.
 
+![Demo](./demo/demo-tool1.webp)
 ---
 
 ## ✨ Features
@@ -87,6 +88,8 @@ This tool is often used as a **base layer** for Tool #2, allowing artists to pla
 
 Overlay a **Sprite (PNG or animated GIF)** on top of a looping **Background video (WEBM)**.  
 Move, rotate, and scale the Sprite in real-time, then **record** the composition to WEBM.
+
+![Demo](./demo/demo-tool2.webp)
 
 This tool is fully compatible with **exports from the Parallax Scrolling Renderer**.  
 You can:
