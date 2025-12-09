@@ -1,9 +1,9 @@
-<!-- File: overlay_webm_png_local.html -->
+<!-- File: overlay_bg_sprite_local.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Overlay PNG on WEBM (local)</title>
+  <title>Sprite over Background Video (local)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --tool-gap: .5rem; --panel-bg: rgba(0,0,0,.6); --panel-fg: #fff; }
@@ -19,8 +19,8 @@
     .btn[disabled] { opacity: .6; cursor: not-allowed; }
     .range { width: 160px; }
     #stage { position: relative; width: 100%; height: 100%; overflow: hidden; display: grid; place-items: center; background: #000; user-select: none; touch-action: none; }
-    #video { height: 100%; width: auto; max-width: none; max-height: 100%; object-fit: contain; object-position: center center; background: #000; display: block; }
-    #sticker { position: absolute; left: 50%; top: 50%; transform-origin: center center; pointer-events: auto; display: none; }
+    #video { height: 100%; width: auto; max-width: none; max-height: 100%; object-fit: contain; object-position: center; background: #000; display: block; }
+    #sticker { position: absolute; left: 50%; top: 50%; transform-origin: center; pointer-events: auto; display: none; }
     .hud { position: absolute; right: .75rem; top: .75rem; background: var(--panel-bg); color: var(--panel-fg); padding: .5rem .6rem; border-radius: .5rem; font-size: .8rem; line-height: 1.25; max-width: 280px; }
     .badge { padding: .2rem .4rem; border: 1px solid #444; border-radius: .4rem; font-size: .8rem; }
     footer { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
@@ -31,24 +31,19 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- Row 1: files only -->
     <header>
       <div class="row">
         <label>Animated background (webm) <input id="videoFile" type="file" accept="video/webm" /></label>
-        <label><input id="toggleMute" type="checkbox" checked /> Mute</label>
-      </div>
-
-      <div class="row">
-        <label>Sprite (png) <input id="imageFile" type="file" accept="image/png" /></label>
+        <label>Sprite (png/gif) <input id="imageFile" type="file" accept="image/png, image/gif" /></label>
       </div>
     </header>
 
-    <!-- Row 2: sliders + options + buttons -->
     <div class="controls">
       <div class="row">
         <label>Scale <input id="scaleRange" class="range" type="range" min="0.1" max="5" step="0.01" value="1" /></label>
         <label>Speed <input id="speedRange" class="range" type="range" min="0.25" max="10" step="0.25" value="5" /></label>
-		<label><input id="toggleHUD" type="checkbox" checked /> Help</label>
+        <label><input id="toggleHUD" type="checkbox" checked /> Help</label>
+        <label><input id="toggleMute" type="checkbox" checked /> Mute</label>
         <button id="playPause" class="btn" disabled>Play</button>
         <button id="exportWebM" class="btn" disabled>Start recording</button>
       </div>
@@ -56,7 +51,7 @@
 
     <main id="stage">
       <video id="video" playsinline loop></video>
-      <img id="sticker" alt="overlay png" />
+      <img id="sticker" alt="sprite" />
       <div id="hud" class="hud">
         <div><span class="badge">Shortcuts</span></div>
         <div>Move: <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></div>
@@ -102,13 +97,19 @@
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { alpha: true });
 
+    // GIF player (WebCodecs ImageDecoder)
+    let gifPlayer = null; // { bitmaps: ImageBitmap[], durations: number[], total: number, t: number }
+    let spriteIsGIF = false;
+    let spriteBlobURL = null;
+
     function setStatus(msg) { els.status.textContent = msg; }
+
     function applyTransform() {
       els.sticker.style.transform =
         `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) rotate(${state.rot}deg) scale(${state.scale})`;
       els.scaleRange.value = String(state.scale);
     }
-    function centerSticker() { state.x = 0; state.y = 0; clampPosition(); applyTransform(); }
+    function centerSprite() { state.x = 0; state.y = 0; clampPosition(); applyTransform(); }
 
     function fitVideoRect(stageW, stageH, vidW, vidH) {
       if (!vidW || !vidH) return { x:0, y:0, w:stageW, h:stageH };
@@ -121,12 +122,17 @@
     function getStageSize() { const r = els.stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
 
     function clampPosition() {
-      if (!els.sticker.complete || !els.sticker.naturalWidth) return;
+      const hasImg = els.sticker.complete && (els.sticker.naturalWidth || els.sticker.naturalHeight);
+      const hasGif = gifPlayer && gifPlayer.bitmaps && gifPlayer.bitmaps.length;
+      if (!hasImg && !hasGif) return;
+
       const { w: stageW, h: stageH } = getStageSize();
       const vRect = fitVideoRect(stageW, stageH, els.video.videoWidth || 0, els.video.videoHeight || 0);
 
       const stageCx = stageW / 2, stageCy = stageH / 2;
-      const spriteW = els.sticker.naturalWidth * state.scale, spriteH = els.sticker.naturalHeight * state.scale;
+      const baseW = hasGif ? gifPlayer.bitmaps[0].width : els.sticker.naturalWidth;
+      const baseH = hasGif ? gifPlayer.bitmaps[0].height : els.sticker.naturalHeight;
+      const spriteW = baseW * state.scale, spriteH = baseH * state.scale;
 
       let cx = stageCx + state.x, cy = stageCy + state.y;
       const tooWide = spriteW > vRect.w, tooTall = spriteH > vRect.h;
@@ -137,10 +143,52 @@
         cx = Math.min(maxCx, Math.max(minCx, cx));
       }
       if (!tooTall) {
-        const minCy = vRect.y + spriteH / 2, maxCy = vRect.y + vRect.h - spriteW / 2;
+        const minCy = vRect.y + spriteH / 2, maxCy = vRect.y + vRect.h - spriteH / 2;
         cy = Math.min(maxCy, Math.max(minCy, cy));
       }
       state.x = cx - stageCx; state.y = cy - stageCy;
+    }
+
+    // --- GIF decode helper (WebCodecs) ---
+    async function loadGIFWithDecoder(file) {
+      if (!('ImageDecoder' in window)) return null;
+      try {
+        const data = await file.arrayBuffer();
+        const decoder = new ImageDecoder({ data, type: file.type || 'image/gif' });
+        await decoder.tracks.ready;
+        const track = decoder.tracks.selectedTrack;
+        const frameCount = track.frameCount;
+
+        const bitmaps = [];
+        const durations = [];
+        for (let i = 0; i < frameCount; i++) {
+          const { image } = await decoder.decode({ frameIndex: i });
+          const bmp = await createImageBitmap(image);
+          const dur = (typeof image.duration === 'number' && image.duration > 0) ? image.duration / 1000 : 100; // µs→ms
+          durations.push(dur);
+          bitmaps.push(bmp);
+          image.close();
+        }
+        decoder.close?.();
+        const total = durations.reduce((a,b)=>a+b, 0);
+        return { bitmaps, durations, total, t: 0 };
+      } catch (e) {
+        console.warn('GIF decode failed:', e);
+        return null;
+      }
+    }
+
+    function gifAdvance(player, dtMs) {
+      if (!player) return;
+      player.t = (player.t + dtMs) % player.total;
+    }
+    function gifCurrentIndex(player) {
+      let acc = 0;
+      for (let i=0; i<player.durations.length; i++) {
+        acc += player.durations[i];
+        if (player.t < acc) return i;
+      }
+      return player.durations.length - 1;
     }
 
     // Files
@@ -153,14 +201,37 @@
         els.playPause.textContent = 'Pause';
         els.playPause.disabled = false;
         els.exportWebM.disabled = false;
-        setStatus(`Video loaded: ${file.name}`);
-      } catch { setStatus('Cannot play video (autoplay blocked?)'); }
+        setStatus(`Background loaded: ${file.name}`);
+      } catch { setStatus('Cannot play background (autoplay blocked?)'); }
     });
-    els.imageFile.addEventListener('change', (e) => {
+
+    els.imageFile.addEventListener('change', async (e) => {
       const file = e.target.files?.[0]; if (!file) return;
-      const url = URL.createObjectURL(file);
-      els.sticker.src = url;
-      els.sticker.onload = () => { els.sticker.style.display = 'block'; centerSticker(); setStatus(`Sprite loaded: ${file.name}`); };
+      const type = (file.type || '').toLowerCase();
+      if (!/^image\/(png|gif)$/.test(type)) { setStatus('Sprite must be PNG or GIF.'); return; }
+
+      if (spriteBlobURL) { URL.revokeObjectURL(spriteBlobURL); spriteBlobURL = null; }
+      gifPlayer?.bitmaps?.forEach(b=>b.close?.()); gifPlayer = null;
+
+      spriteIsGIF = type === 'image/gif';
+      const url = URL.createObjectURL(file); spriteBlobURL = url;
+
+      if (spriteIsGIF && 'ImageDecoder' in window) {
+        setStatus('Decoding GIF frames…');
+        gifPlayer = await loadGIFWithDecoder(file);
+        if (gifPlayer) {
+          setStatus(`Sprite loaded: ${file.name} (gif, ${gifPlayer.bitmaps.length} frames)`);
+          els.sticker.src = url; // preview handle
+        } else {
+          setStatus('GIF decoding failed; export may be static. Showing GIF via <img>.');
+          els.sticker.src = url;
+        }
+      } else {
+        if (spriteIsGIF) setStatus('GIF export animation may be static (no ImageDecoder).');
+        els.sticker.src = url;
+      }
+
+      els.sticker.onload = () => { els.sticker.style.display = 'block'; centerSprite(); };
     });
 
     // UI
@@ -173,8 +244,7 @@
     els.toggleMute.addEventListener('change', () => { els.video.muted = els.toggleMute.checked; });
     els.toggleHUD.addEventListener('change', () => { els.hud.style.display = els.toggleHUD.checked ? 'block' : 'none'; });
 
-    // Export WebM
-    let chunks = [], exportRaf = null;
+    // Draw one frame (no GIF advance here!)
     function drawFrameToCanvas() {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const { w: stageW, h: stageH } = getStageSize();
@@ -189,29 +259,41 @@
       if (vidW && vidH) ctx.drawImage(els.video, vRect.x, vRect.y, vRect.w, vRect.h);
       else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, stageW, stageH); }
 
-      if (els.sticker.complete && els.sticker.naturalWidth) {
-        const stageCx = stageW / 2, stageCy = stageH / 2;
-        const spriteW = els.sticker.naturalWidth * state.scale, spriteH = els.sticker.naturalHeight * state.scale;
-        let cx = stageCx + state.x, cy = stageCy + state.y;
+      const hasGif = gifPlayer && gifPlayer.bitmaps && gifPlayer.bitmaps.length;
+      const baseW = hasGif ? gifPlayer.bitmaps[0].width : els.sticker.naturalWidth;
+      const baseH = hasGif ? gifPlayer.bitmaps[0].height : els.sticker.naturalHeight;
+      if (!baseW || !baseH) return;
 
-        const tooWide = spriteW > vRect.w, tooTall = spriteH > vRect.h;
-        if (tooWide) cx = vRect.x + vRect.w / 2;
-        if (tooTall) cy = vRect.y + vRect.h / 2;
-        if (!tooWide) {
-          const minCx = vRect.x + spriteW / 2, maxCx = vRect.x + vRect.w - spriteW / 2;
-          cx = Math.min(maxCx, Math.max(minCx, cx));
-        }
-        if (!tooTall) {
-          const minCy = vRect.y + spriteH / 2, maxCy = vRect.y + vRect.h - spriteH / 2;
-          cy = Math.min(maxCy, Math.max(minCy, cy));
-        }
+      const stageCx = stageW / 2, stageCy = stageH / 2;
+      const spriteW = baseW * state.scale, spriteH = baseH * state.scale;
+      let cx = stageCx + state.x, cy = stageCy + state.y;
 
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(state.rot * Math.PI / 180);
-        ctx.drawImage(els.sticker, -spriteW/2, -spriteH/2, spriteW, spriteH);
-        ctx.restore();
+      const tooWide = spriteW > vRect.w, tooTall = spriteH > vRect.h;
+      if (tooWide) cx = vRect.x + vRect.w / 2;
+      if (tooTall) cy = vRect.y + vRect.h / 2;
+      if (!tooWide) {
+        const minCx = vRect.x + spriteW / 2, maxCx = vRect.x + vRect.w - spriteW / 2;
+        cx = Math.min(maxCx, Math.max(minCx, cx));
       }
+      if (!tooTall) {
+        const minCy = vRect.y + spriteH / 2, maxCy = vRect.y + vRect.h - spriteH / 2;
+        cy = Math.min(maxCy, Math.max(minCy, cy));
+      }
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(state.rot * Math.PI / 180);
+      if (hasGif) {
+        const idx = gifCurrentIndex(gifPlayer);
+        ctx.drawImage(gifPlayer.bitmaps[idx], -spriteW/2, -spriteH/2, spriteW, spriteH);
+      } else {
+        ctx.drawImage(els.sticker, -spriteW/2, -spriteH/2, spriteW, spriteH);
+      }
+      ctx.restore();
     }
 
+    // Export
+    let chunks = [], exportRaf = null;
     function startExport() {
       if (state.recording) return;
       const fps = 30;
@@ -225,6 +307,15 @@
       chunks = [];
       const opts = mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 };
       const recorder = new MediaRecorder(canvasStream, opts);
+
+      let last = performance.now();
+      function renderExport(){
+        const now = performance.now();
+        const dt = Math.min(100, now - last); last = now;
+        if (gifPlayer) gifAdvance(gifPlayer, dt);     // advance ONLY here during export
+        drawFrameToCanvas();
+        exportRaf = requestAnimationFrame(renderExport);
+      }
 
       recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
@@ -243,7 +334,13 @@
         setStatus('Export finished.');
       };
 
-      (function renderExport(){ drawFrameToCanvas(); exportRaf = requestAnimationFrame(renderExport); })();
+      if (spriteIsGIF && !gifPlayer && !('ImageDecoder' in window)) {
+        setStatus('Note: Animated GIF export requires ImageDecoder; export may be static.');
+      }
+
+      // Start
+      drawFrameToCanvas();
+      exportRaf = requestAnimationFrame(renderExport);
       recorder.start(100);
 
       state.recording = true;
@@ -255,7 +352,7 @@
     function stopExport(){ const r = els._recorder; if (r && state.recording){ try{ r.stop(); }catch{} } }
     els.exportWebM.addEventListener('click', () => { if (!state.recording) startExport(); else stopExport(); });
 
-    // Keyboard: arrows + PageUp/PageDown
+    // Keyboard
     function isTypingInInput(ev) {
       const t = ev.target;
       return (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) &&
@@ -279,10 +376,10 @@
       else if (k === 'ArrowDown') state.keys.down = false;
     });
 
-    // RAF (move + clamp)
+    // RAF (preview): move, clamp, and advance GIF only when NOT recording
     function tick(ts) {
       if (state.lastTs == null) state.lastTs = ts;
-      const dt = Math.min(0.05, (ts - state.lastTs) / 1000);
+      const dt = Math.min(50, ts - state.lastTs); // ms
       state.lastTs = ts;
 
       let dx = 0, dy = 0;
@@ -294,10 +391,12 @@
       if (dx || dy) {
         const len = Math.hypot(dx, dy); dx /= len; dy /= len;
         const v = state.baseSpeedPxS * state.speed;
-        state.x += dx * v * dt;
-        state.y += dy * v * dt;
+        state.x += dx * v * (dt / 1000);
+        state.y += dy * v * (dt / 1000);
         clampPosition(); applyTransform();
       }
+
+      if (!state.recording && gifPlayer) gifAdvance(gifPlayer, dt); // <-- only in preview
       requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
@@ -329,7 +428,7 @@
 
     window.addEventListener('resize', () => { clampPosition(); applyTransform(); });
     applyTransform();
-    setStatus('Load a WEBM background and a PNG sprite.');
+    setStatus('Load a WEBM background and a PNG/GIF sprite. Animated GIF export is now time-accurate.');
   </script>
 </body>
 </html>
